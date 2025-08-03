@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SquareShift</title>
+    <style>
+        :root {
+            --primary-color: #007bff; /* Modern blue */
+            --secondary-color: #6c757d;
+            --accent-color: #ffc107; /* Yellow for cursor */
+            --bg-color: #f8f9fa; /* Light gray background */
+            --text-color: #212529;
+            --red-cell: #dc3545; /* Modern red */
+            --grid-bg: white;
+            --shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+        body {
+            background: linear-gradient(to bottom, #0000A0, #000080); /* Gradient BSOD-inspired */
+            color: var(--text-color);
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+            overflow: hidden; /* Prevent body scroll */
+        }
+        #game-container {
+            display: flex;
+            align-items: flex-start;
+            gap: 30px;
+            background: var(--bg-color);
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: var(--shadow);
+            max-width: 900px;
+            max-height: 90vh;
+            overflow: hidden; /* Prevent container scroll */
+        }
+        #grid-section {
+            text-align: center;
+            flex: 1;
+        }
+        #controls-section {
+            width: 250px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        #game-title {
+            font-size: 36px;
+            font-weight: bold;
+            color: var(--primary-color);
+            margin-bottom: 15px;
+        }
+        #level-display {
+            font-size: 28px;
+            margin-bottom: 10px;
+            color: var(--primary-color);
+        }
+        #move-counter {
+            font-size: 20px;
+            margin-bottom: 15px;
+            color: var(--secondary-color);
+        }
+        #grid-container {
+            display: inline-grid;
+            grid-template-columns: repeat(10, 35px);
+            grid-template-rows: repeat(10, 35px);
+            gap: 3px;
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 10px;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+        .cell {
+            width: 35px;
+            height: 35px;
+            background-color: var(--grid-bg);
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            cursor: default;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+        }
+        .cell:hover {
+            transform: scale(1.05);
+        }
+        .red {
+            background-color: var(--red-cell);
+        }
+        .cursor {
+            border: 3px solid var(--accent-color) !important;
+            box-shadow: 0 0 10px var(--accent-color), inset 0 0 5px var(--accent-color);
+            background-color: #fff3cd; /* Light yellow tint */
+        }
+        #message {
+            margin-top: 20px;
+            font-size: 20px;
+            color: var(--primary-color);
+            font-weight: bold;
+        }
+        #instructions {
+            font-size: 16px;
+            color: var(--secondary-color);
+        }
+        #level-selector {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: var(--shadow);
+        }
+        #level-select {
+            padding: 8px;
+            font-size: 16px;
+            border: 1px solid var(--secondary-color);
+            border-radius: 5px;
+            width: 100%;
+        }
+        button {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        #undo-button {
+            width: 100%;
+        }
+        #editor-section {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        #editor-instructions {
+            font-size: 14px;
+            color: var(--secondary-color);
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="grid-section">
+            <div id="game-title">SquareShift</div>
+            <div id="level-display">Level 1</div>
+            <div id="move-counter">Moves: 0 / 5</div>
+            <div id="grid-container"></div>
+            <div id="message"></div>
+        </div>
+        <div id="controls-section">
+            <div id="instructions">Arrows or ASWD: Move cursor | Enter + Arrow: Flip ray in direction | R: Reset level | U: Undo last move</div>
+            <button id="undo-button" onclick="undoMove()">Undo Last Move</button>
+            <div id="level-selector">
+                <label for="level-select">Select Level:</label>
+                <select id="level-select"></select>
+            </div>
+            <div id="editor-section">
+                <button onclick="toggleEditor()">Toggle Level Editor</button>
+                <div id="editor-instructions" style="display: none;">Click cells to toggle red/blank. Click 'Save Custom Level' to copy JSON to clipboard.</div>
+                <button id="save-editor" style="display: none;" onclick="saveCustomLevel()">Save Custom Level</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const GRID_SIZE = 10;
+        const NUM_LEVELS = 50;
+        const ANIMATION_DELAY = 50; // ms per cell
+        let levels = [];
+        let currentLevel = 0;
+        let grid = [];
+        let cursorRow = 0;
+        let cursorCol = 0;
+        let flipMode = false;
+        let isAnimating = false;
+        let moveCount = 0;
+        let moveLimit = 5;
+        let moveHistory = [];
+        let editorMode = false;
+
+        function flipRay(row, col, dir) {
+            const positions = [];
+            if (dir === 'right') {
+                for (let j = col; j < GRID_SIZE; j++) positions.push([row, j]);
+            } else if (dir === 'left') {
+                for (let j = col; j >= 0; j--) positions.push([row, j]);
+            } else if (dir === 'down') {
+                for (let i = row; i < GRID_SIZE; i++) positions.push([i, col]);
+            } else if (dir === 'up') {
+                for (let i = row; i >= 0; i--) positions.push([i, col]);
+            }
+            // Save state for undo
+            const prevGrid = grid.map(r => r.slice());
+            moveHistory.push({ prevGrid, positions });
+            animateFlip(positions);
+            moveCount++;
+            updateMoveCounter();
+        }
+
+        function animateFlip(positions) {
+            if (isAnimating) return;
+            isAnimating = true;
+
+            // Flip states immediately
+            positions.forEach(([r, c]) => {
+                grid[r][c] = 1 - grid[r][c];
+            });
+
+            // Animate outward from cursor
+            positions.forEach(([r, c], idx) => {
+                setTimeout(() => {
+                    const cell = getCellElement(r, c);
+                    if (cell) {
+                        cell.classList.toggle('red', grid[r][c] === 1);
+                    }
+                }, ANIMATION_DELAY * idx);
+            });
+
+            setTimeout(() => {
+                isAnimating = false;
+                if (isSolved()) {
+                    document.getElementById('message').textContent = 'Level solved! Moving to next level...';
+                    setTimeout(nextLevel, 1500);
+                } else if (moveCount >= moveLimit) {
+                    document.getElementById('message').textContent = 'Move limit reached! Press R to reset.';
+                }
+            }, ANIMATION_DELAY * positions.length + 100);
+        }
+
+        function undoMove() {
+            if (moveHistory.length === 0 || isAnimating) return;
+            const lastMove = moveHistory.pop();
+            grid = lastMove.prevGrid;
+            moveCount--;
+            updateGrid();
+            updateMoveCounter();
+            document.getElementById('message').textContent = '';
+        }
+
+        function isSolved() {
+            return grid.every(row => row.every(cell => cell === 0));
+        }
+
+        function updateMoveCounter() {
+            document.getElementById('move-counter').textContent = `Moves: ${moveCount} / ${moveLimit}`;
+        }
+
+        function generateLevel(difficulty) {
+            let levelGrid = Array.from({ length: GRID_SIZE }, () => Array(GRID_SIZE).fill(0));
+            const numFlips = difficulty * 3;
+            for (let i = 0; i < numFlips; i++) {
+                const row = Math.floor(Math.random() * GRID_SIZE);
+                const col = Math.floor(Math.random() * GRID_SIZE);
+                const dir = ['up', 'down', 'left', 'right'][Math.floor(Math.random() * 4)];
+                flipRayInLevel(levelGrid, row, col, dir);
+            }
+            return levelGrid;
+        }
+
+        function flipRayInLevel(levelGrid, row, col, dir) {
+            if (dir === 'right') {
+                for (let j = col; j < GRID_SIZE; j++) levelGrid[row][j] = 1 - levelGrid[row][j];
+            } else if (dir === 'left') {
+                for (let j = col; j >= 0; j--) levelGrid[row][j] = 1 - levelGrid[row][j];
+            } else if (dir === 'down') {
+                for (let i = row; i < GRID_SIZE; i++) levelGrid[i][col] = 1 - levelGrid[i][col];
+            } else if (dir === 'up') {
+                for (let i = row; i >= 0; i--) levelGrid[i][col] = 1 - levelGrid[i][col];
+            }
+        }
+
+        function initLevels() {
+            for (let lvl = 1; lvl <= NUM_LEVELS; lvl++) {
+                levels.push(generateLevel(lvl));
+            }
+        }
+
+        function loadLevel(levelIndex) {
+            currentLevel = levelIndex;
+            grid = levels[levelIndex].map(row => row.slice());
+            moveCount = 0;
+            moveLimit = (levelIndex + 1) * 5;
+            moveHistory = [];
+            document.getElementById('level-display').textContent = `Level ${levelIndex + 1}`;
+            document.getElementById('move-counter').textContent = `Moves: ${moveCount} / ${moveLimit}`;
+            document.getElementById('message').textContent = '';
+            cursorRow = 0;
+            cursorCol = 0;
+            flipMode = false;
+            editorMode = false;
+            toggleEditorUI(false);
+            buildGridUI();
+            updateGrid();
+            document.getElementById('level-select').value = levelIndex;
+        }
+
+        function nextLevel() {
+            if (currentLevel + 1 < NUM_LEVELS) {
+                loadLevel(currentLevel + 1);
+            } else {
+                document.getElementById('message').textContent = 'All levels completed!';
+            }
+        }
+
+        function buildGridUI() {
+            const container = document.getElementById('grid-container');
+            container.innerHTML = '';
+            for (let row = 0; row < GRID_SIZE; row++) {
+                for (let col = 0; col < GRID_SIZE; col++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('cell');
+                    cell.dataset.row = row;
+                    cell.dataset.col = col;
+                    if (editorMode) {
+                        cell.onclick = () => toggleCell(row, col);
+                    }
+                    container.appendChild(cell);
+                }
+            }
+        }
+
+        function updateGrid() {
+            const cells = document.querySelectorAll('.cell');
+            cells.forEach(cell => {
+                const r = parseInt(cell.dataset.row);
+                const c = parseInt(cell.dataset.col);
+                cell.classList.toggle('red', grid[r][c] === 1);
+                cell.classList.toggle('cursor', r === cursorRow && c === cursorCol);
+            });
+        }
+
+        function getCellElement(row, col) {
+            return document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
+        }
+
+        function toggleCell(row, col) {
+            if (!editorMode) return;
+            grid[row][col] = 1 - grid[row][col];
+            updateGrid();
+        }
+
+        function toggleEditor() {
+            editorMode = !editorMode;
+            toggleEditorUI(editorMode);
+            buildGridUI(); // Rebuild to add/remove click handlers
+            updateGrid();
+        }
+
+        function toggleEditorUI(show) {
+            document.getElementById('editor-instructions').style.display = show ? 'block' : 'none';
+            document.getElementById('save-editor').style.display = show ? 'block' : 'none';
+        }
+
+        function saveCustomLevel() {
+            const json = JSON.stringify(grid);
+            navigator.clipboard.writeText(json).then(() => {
+                alert('Custom level JSON copied to clipboard! Share it or load it later.');
+            });
+        }
+
+        function handleKeyDown(e) {
+            if (isAnimating || moveCount >= moveLimit || editorMode) return;
+            const key = e.keyCode;
+            if (key === 13) { // Enter
+                flipMode = true;
+                return;
+            }
+            let dir;
+            if (key === 37 || key === 65) dir = 'left'; // Left or A
+            else if (key === 38 || key === 87) dir = 'up'; // Up or W
+            else if (key === 39 || key === 68) dir = 'right'; // Right or D
+            else if (key === 40 || key === 83) dir = 'down'; // Down or S
+            else if (key === 82) { // R to reset
+                loadLevel(currentLevel);
+                return;
+            } else if (key === 85) { // U for undo
+                undoMove();
+                return;
+            }
+            if (!dir) return;
+
+            e.preventDefault(); // Prevent page scroll on arrow keys
+
+            if (flipMode) {
+                flipRay(cursorRow, cursorCol, dir);
+                flipMode = false;
+            } else {
+                // Move cursor, prevent edge moves
+                if (dir === 'left' && cursorCol > 0) cursorCol--;
+                else if (dir === 'right' && cursorCol < GRID_SIZE - 1) cursorCol++;
+                else if (dir === 'up' && cursorRow > 0) cursorRow--;
+                else if (dir === 'down' && cursorRow < GRID_SIZE - 1) cursorRow++;
+                updateGrid();
+            }
+        }
+
+        function initLevelSelector() {
+            const select = document.getElementById('level-select');
+            for (let i = 0; i < NUM_LEVELS; i++) {
+                const option = document.createElement('option');
+                option.value = i;
+                option.textContent = `Level ${i + 1}`;
+                select.appendChild(option);
+            }
+            select.onchange = (e) => {
+                loadLevel(parseInt(e.target.value));
+            };
+        }
+
+        document.addEventListener('keydown', handleKeyDown);
+        initLevels();
+        initLevelSelector();
+        loadLevel(0);
+    </script>
+</body>
+</html>
